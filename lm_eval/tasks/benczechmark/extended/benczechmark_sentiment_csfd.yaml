@@ -1,0 +1,16 @@
+task: benczechmark_sentiment_csfd
+output_type: multiple_choice
+dataset_path: CZLC/csfd_sentiment_balanced
+test_split: test
+fewshot_split: test
+num_fewshot: 3
+fewshot_delimiter: "\n\n"
+doc_to_text: "Recenze: {{query}}\nSentiment recenze je:"
+doc_to_target: gold
+doc_to_choice: choices
+metric_list:
+  - metric: acc
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

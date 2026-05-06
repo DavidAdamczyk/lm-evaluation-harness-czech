@@ -1,0 +1,117 @@
+group: benczechmark_czechnews
+group_alias: Benchmark Czech News
+task:
+  - task: benczechmark_czechnews_0
+    task_alias: prompt-0
+    class: !function utils.BCZMMultipleChoiceTask
+    output_type: multiple_choice
+    dataset_path: davidadamczyk/czechbench_czech_news
+    test_split: test
+    training_split: train
+    fewshot_split: train
+    num_fewshot: 3
+    fewshot_delimiter: "\n"
+    description: "Pro zadaný text pocházející ze zpravodajského článku urči jeho kategorii z následujícího výběru:\n2) Domácí\n3) Sport\n4) Kultura\n1) Zahraniční\n5) Ekonomika\nVždy vracej pouze název kategorie bez dalšího komentáře.\n"
+    doc_to_text: "Urči kategorii pro následující příklad:\nText: {{brief}}\nKlasifikace: "
+    doc_to_target: !function utils.get_czech_news_target
+    doc_to_choice: ["Zahraniční", "Domácí", "Sport", "Kultura", "Ekonomika"]
+    metric_list:
+      - metric: acc
+      - metric: macro_f1
+        aggregation: !function utils.aggregate_macro_f1_score
+        higher_is_better: true
+      - metric: !function utils.avg_mcauroc
+        aggregation: !function utils.aggregate_avg_mcauroc
+        higher_is_better: true
+
+  - task: benczechmark_czechnews_1
+    task_alias: prompt-1
+    class: !function utils.BCZMMultipleChoiceTask
+    output_type: multiple_choice
+    dataset_path: davidadamczyk/czechbench_czech_news
+    test_split: test
+    training_split: train
+    fewshot_split: train
+    num_fewshot: 3
+    fewshot_delimiter: "\n"
+    description: "Pro pro novinový článek urči jeho kategorii z následujících možností:\n2) Domácí\n3) Sport\n1) Zahraniční\n4) Kultura\n5) Ekonomika\nOdpověz pouze názevem kategorie bez jakýchkoliv komentářů.\n"
+    doc_to_text: "Pro novinový článek urči jeho kategorii:\nText: {{brief}}\nKategorie: "
+    doc_to_target: !function utils.get_czech_news_target
+    doc_to_choice: ["Zahraniční", "Domácí", "Sport", "Kultura", "Ekonomika"]
+    metric_list:
+      - metric: acc
+      - metric: macro_f1
+        aggregation: !function utils.aggregate_macro_f1_score
+        higher_is_better: true
+      - metric: !function utils.avg_mcauroc
+        aggregation: !function utils.aggregate_avg_mcauroc
+        higher_is_better: true
+
+  - task: benczechmark_czechnews_2
+    task_alias: prompt-2
+    class: !function utils.BCZMMultipleChoiceTask
+    output_type: multiple_choice
+    dataset_path: davidadamczyk/czechbench_czech_news
+    test_split: test
+    training_split: train
+    fewshot_split: train
+    num_fewshot: 3
+    fewshot_delimiter: "\n"
+    description: "Urči kategorii novinového člínku z následujících možností:\n1) Zahraniční\n2) Domácí\n3) Sport\n4) Kultura\n5) Ekonomika\nVracej pouze kategorii bez dalších poznámek.\n"
+    doc_to_text: "Urči kategorii novinového článku:\nText: {{brief}}\nKategorie: "
+    doc_to_target: !function utils.get_czech_news_target
+    doc_to_choice: ["Zahraniční", "Domácí", "Sport", "Kultura", "Ekonomika"]
+    metric_list:
+      - metric: acc
+      - metric: macro_f1
+        aggregation: !function utils.aggregate_macro_f1_score
+        higher_is_better: true
+      - metric: !function utils.avg_mcauroc
+        aggregation: !function utils.aggregate_avg_mcauroc
+        higher_is_better: true
+
+  - task: benczechmark_czechnews_3
+    task_alias: prompt-3
+    class: !function utils.BCZMMultipleChoiceTask
+    output_type: multiple_choice
+    dataset_path: davidadamczyk/czechbench_czech_news
+    test_split: test
+    training_split: train
+    fewshot_split: train
+    num_fewshot: 3
+    fewshot_delimiter: "\n"
+    description: "Pro daný novinový člínek urči jeho kategorii z následujících možností:\n5) Ekonomika\n1) Zahraniční\n4) Kultura\n2) Domácí\n3) Sport\nOdpověz názvem kategorie bez komentářů.\n"
+    doc_to_text: "Pro daný novinový článek urči jeho kategorii:\nText: {{brief}}\nKategorie: "
+    doc_to_target: !function utils.get_czech_news_target
+    doc_to_choice: ["Zahraniční", "Domácí", "Sport", "Kultura", "Ekonomika"]
+    metric_list:
+      - metric: acc
+      - metric: macro_f1
+        aggregation: !function utils.aggregate_macro_f1_score
+        higher_is_better: true
+      - metric: !function utils.avg_mcauroc
+        aggregation: !function utils.aggregate_avg_mcauroc
+        higher_is_better: true
+
+  - task: benczechmark_czechnews_4
+    task_alias: prompt-4
+    class: !function utils.BCZMMultipleChoiceTask
+    output_type: multiple_choice
+    dataset_path: davidadamczyk/czechbench_czech_news
+    test_split: test
+    training_split: train
+    fewshot_split: train
+    num_fewshot: 3
+    fewshot_delimiter: "\n"
+    description: "Urči kategorii pro zadaný text ze zpravodajského článku z následujícího výběru:\n3) Sport\n5) Ekonomika\n4) Kultura\n1) Zahraniční\n2) Domácí\nVrať pouze název kategorie bez dalších komentářů.\n"
+    doc_to_text: "Urči kategorii pro zadaný text:\nText: {{brief}}\nKategorie: "
+    doc_to_target: !function utils.get_czech_news_target
+    doc_to_choice: ["Zahraniční", "Domácí", "Sport", "Kultura", "Ekonomika"]
+    metric_list:
+      - metric: acc
+      - metric: macro_f1
+        aggregation: !function utils.aggregate_macro_f1_score
+        higher_is_better: true
+      - metric: !function utils.avg_mcauroc
+        aggregation: !function utils.aggregate_avg_mcauroc
+        higher_is_better: true

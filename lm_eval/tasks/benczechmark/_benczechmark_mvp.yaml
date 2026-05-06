@@ -1,0 +1,10 @@
+group: benczechmark_mvp
+group_alias: BenCzechMark MVP (Czech language understanding)
+task:
+  - benczechmark_hellaswag
+  - benczechmark_sentiment_fb
+  - benczechmark_czechnews
+  - benczechmark_csfever_nli
+  - belebele_ces_Latn
+metadata:
+  version: 1.0

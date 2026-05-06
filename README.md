@@ -1,8 +1,79 @@
-# Language Model Evaluation Harness
+# lm-evaluation-harness-czech
+
+> **Specializovaný fork [EleutherAI/lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) zaměřený výhradně na evaluaci LLM modelů v češtině.**
+> Pro obecnou evaluaci v angličtině používej originální upstream — tento fork přidává a udržuje pouze BenCzechMark task definice, orchestrační skripty a výsledky pro česky-orientované modely.
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10256836.svg)](https://doi.org/10.5281/zenodo.10256836)
 
 ---
+
+## Co tento fork přidává
+
+- **`benczechmark_mvp`** — task group 4 MC úloh pro rychlý cross-model ranking češtiny (hellaswag, sentiment_fb, czechnews, belebele_ces_Latn). Vše přes `loglikelihood`, takže funguje jednotně na base i IT modelech bez chat-template magie.
+- **`benczechmark_extended`** — rozšířená sada 16 úloh napříč BCM kategoriemi (čtení, sentiment ×3, NLI ×2, Cermat státnice, Umimeto ×6, …). Pro hloubkový profil silných/slabých stránek modelu.
+- **`benczechmark_csfever_nli`** — samostatný NLI task (factual claim verification).
+- **Orchestrační skripty** v [`scripts/benczechmark/`](scripts/benczechmark/) — vLLM container management, sekvenční eval pipeline, sdílený runner.
+- **Vyhodnocovací zpráva** — viz [**REPORT.md**](REPORT.md) pro srovnání 4 modelů (Qwen 3.6 dense+MoE, Gemma 4 dense+MoE) na DGX Spark.
+
+Generate úlohy z původního BCM (`cs_triviaqa`, `sqad32`, `summarization`) zůstávají v repu, ale nejsou v MVP/extended ranking sadách — jsou příliš citlivé na výstupní formát a nepřenášejí se spolehlivě mezi base a IT modely.
+
+---
+
+## Spuštění
+
+**Doporučený backend:** vLLM na `localhost:8000` (BF16 na DGX Spark / GB10).
+
+Manuálně, jednorázově:
+
+```bash
+lm_eval \
+  --model local-completions \
+  --model_args "model=<MODEL_ID>,base_url=http://localhost:8000/v1/completions,tokenized_requests=False" \
+  --tasks benczechmark_mvp \
+  --output_path results/<model_slug>_mvp
+```
+
+S orchestračním skriptem (vLLM start/stop + eval automaticky):
+
+```bash
+# MVP run (4 tasky, default LIMIT=200)
+./scripts/benczechmark/run_mvp_eval.sh Qwen/Qwen3.6-27B
+
+# Extended (16 tasků)
+TASKS=benczechmark_extended SUFFIX=_extended ./scripts/benczechmark/run_mvp_eval.sh Qwen/Qwen3.6-27B
+```
+
+---
+
+## Výsledky (květen 2026)
+
+Plný popis v [REPORT.md](REPORT.md). TL;DR ranking ze 6 task families (acc, vyšší = lepší):
+
+| Model | belebele | czechnews | sentiment_fb | hellaswag | csfever_nli | **průměr** |
+|---|---:|---:|---:|---:|---:|---:|
+| **Qwen3.6-27B (dense)** | **0.915** | **0.916** | **0.718** | **0.434** | **0.730** | **0.696** |
+| Qwen3.6-35B-A3B (MoE) | 0.855 | 0.860 | 0.701 | 0.428 | 0.630 | 0.656 |
+| gemma-4-31B-it (dense) | 0.655 | 0.368 | 0.500 | 0.297 | 0.615 | 0.457 |
+| gemma-4-26B-A4B-it (MoE) | 0.560 | 0.444 | 0.425 | 0.318 | 0.555 | 0.440 |
+
+**Doporučení pro DGX Spark:** Qwen3.6-27B pro nejvyšší kvalitu, Qwen3.6-35B-A3B pro vyšší propustnost, Gemma 4 rodina se pro česky-první aplikace nedoporučuje (~24 p.b. propad).
+
+Hellaswag hodnoty jsou z `--limit 1000`; ostatní z `--limit 200`. Detailní rozpis Qwen3.6-27B přes 16 BCM kategorií najdeš v REPORT.md.
+
+---
+
+## Changelog (benczechmark fork)
+
+- **2026-05-06** — Přidán `benczechmark_extended` task group (16 úloh) a `benczechmark_csfever_nli`. Orchestrační skripty přesunuty do `scripts/benczechmark/`. Vyhodnocena sada 4 modelů na DGX Spark; viz [REPORT.md](REPORT.md).
+- **2026-04-22** — Přidán `benczechmark_mvp` task group (4 MC úlohy) jako jednotný vstupní bod pro MVP evaluaci češtiny.
+- **2026-04-22** — Oprava whitespace bugu ve 3 `generate_until` YAMLech (`cs_triviaqa`, `sqad32`, `summarization`): few-shot příklady se renderovaly s dvojmezerou před odpovědí (`doc_to_text` s trailing space + default `target_delimiter: " "`), zatímco cílová otázka měla jen jednu mezeru. Model (Gemma 4 base) predikoval `\n\n` jako top-1 token a odpovídal prázdný string. Opraveno nastavením `target_delimiter: ""` ve všech sub-tascích.
+- **2026-04-22** — Přidána SQuAD-style token F1 do `cs_triviaqa` a `sqad32` přes `process_results_qa_bcm` v `lm_eval/tasks/benczechmark/utils.py` (používá `transformers.data.metrics.squad_metrics` s max přes multi-gold answers). Bez toho by default `metric: f1` v lm_eval používal `sklearn.f1_score` (klasifikační), který pro textovou generaci vrací nesmyslné hodnoty (např. f1=1.0 při exact_match=0).
+- **2026-04-22** — Generate úlohy (`cs_triviaqa`, `sqad32`, `summarization`) vyřazené z MVP core. Zůstávají registrované pro rozšířenou evaluaci, ale MVP ranking je nepoužívá (jsou format-sensitive a nepřenosí se spolehlivě mezi base a IT modely).
+
+---
+
+<details>
+<summary>Upstream <code>lm-evaluation-harness</code> dokumentace (rozbal)</summary>
 
 ## Latest News 📣
 - [2025/12] **CLI refactored** with subcommands (`run`, `ls`, `validate`) and YAML config file support via `--config`. See the [CLI Reference](./docs/interface.md) and [Configuration Guide](./docs/config_files.md).
@@ -743,3 +814,5 @@ These extras install dependencies required for specific evaluation tasks:
   url          = {https://zenodo.org/records/12608602}
 }
 ```
+
+</details>

@@ -1,0 +1,192 @@
+group: benczechmark_cs_triviaqa
+group_alias: CS Trivia QA
+task:
+  - task: benczechmark_cs_triviaqa_0
+    task_alias: prompt-0
+    class: !function utils.BCZMTask
+    dataset_path: CZLC/cs_triviaqa
+    output_type: generate_until
+    test_split: test
+    training_split: test
+    fewshot_split: test
+    num_fewshot: 3
+    fewshot_delimiter: "\n\n"
+    target_delimiter: ""
+    description: "Odpovězte na tyto otázky (Odpověď by měla končit znakem '\n\n'):\n\n"
+    doc_to_text: "Otázka: {{question}}\nOdpověď: "
+    doc_to_target: "{{answers}}"
+    generation_kwargs:
+      until:
+        - "\n\n"
+        - "</s>"
+        - "Otázka:"
+        - "Dotaz:"
+        - "<|im_end|>"
+      do_sample: false
+      temperature: 0.0
+      max_gen_toks: 15
+    filter_list:
+      - name: remove_whitespace
+        filter:
+          - function: remove_whitespace
+          - function: take_first
+    process_results: !function utils.process_results_qa_bcm
+    metric_list:
+      - metric: exact_match
+        aggregation: mean
+        higher_is_better: true
+      - metric: f1
+        aggregation: mean
+        higher_is_better: true
+
+  - task: benczechmark_cs_triviaqa_1
+    task_alias: prompt-1
+    class: !function utils.BCZMTask
+    dataset_path: CZLC/cs_triviaqa
+    output_type: generate_until
+    test_split: test
+    training_split: test
+    fewshot_split: test
+    num_fewshot: 3
+    fewshot_delimiter: "\n\n"
+    target_delimiter: ""
+    description: "Zodpovězte následující otázky (Odpověď uzavřete symbolem '\n\n'):\n\n"
+    doc_to_text: "Dotaz: {{question}}\nSprávná odpověď: "
+    doc_to_target: "{{answers}}"
+    generation_kwargs:
+      until:
+        - "\n\n"
+        - "</s>"
+        - "Otázka:"
+        - "Dotaz:"
+        - "<|im_end|>"
+      do_sample: false
+      temperature: 0.0
+      max_gen_toks: 15
+    filter_list:
+      - name: remove_whitespace
+        filter:
+          - function: remove_whitespace
+          - function: take_first
+    process_results: !function utils.process_results_qa_bcm
+    metric_list:
+      - metric: exact_match
+        aggregation: mean
+        higher_is_better: true
+      - metric: f1
+        aggregation: mean
+        higher_is_better: true
+
+  - task: benczechmark_cs_triviaqa_2
+    task_alias: prompt-2
+    class: !function utils.BCZMTask
+    dataset_path: CZLC/cs_triviaqa
+    output_type: generate_until
+    test_split: test
+    training_split: test
+    fewshot_split: test
+    num_fewshot: 3
+    fewshot_delimiter: "\n\n"
+    target_delimiter: ""
+    description: "Kvíz (Ukončete svou odpověď řetězcem '\n\n'):\n\n"
+    doc_to_text: "Otázka: {{question}}\nOdpověď: "
+    doc_to_target: "{{answers}}"
+    generation_kwargs:
+      until:
+        - "\n\n"
+        - "</s>"
+        - "Otázka:"
+        - "Dotaz:"
+        - "<|im_end|>"
+      do_sample: false
+      temperature: 0.0
+      max_gen_toks: 15
+    filter_list:
+      - name: remove_whitespace
+        filter:
+          - function: remove_whitespace
+          - function: take_first
+    process_results: !function utils.process_results_qa_bcm
+    metric_list:
+      - metric: exact_match
+        aggregation: mean
+        higher_is_better: true
+      - metric: f1
+        aggregation: mean
+        higher_is_better: true
+
+  - task: benczechmark_cs_triviaqa_3
+    task_alias: prompt-3
+    class: !function utils.BCZMTask
+    dataset_path: CZLC/cs_triviaqa
+    output_type: generate_until
+    test_split: test
+    training_split: test
+    fewshot_split: test
+    num_fewshot: 3
+    fewshot_delimiter: "\n\n"
+    target_delimiter: ""
+    description: "Najděte odpovědi na tato dotazy (Použijte symbol '\n\n' pro ukončení odpovědi):\n\n"
+    doc_to_text: "Dotaz: {{question}}?\nVaše odpověď: "
+    doc_to_target: "{{answers}}"
+    generation_kwargs:
+      until:
+        - "\n\n"
+        - "</s>"
+        - "Otázka:"
+        - "Dotaz:"
+        - "<|im_end|>"
+      do_sample: false
+      temperature: 0.0
+      max_gen_toks: 15
+    filter_list:
+      - name: remove_whitespace
+        filter:
+          - function: remove_whitespace
+          - function: take_first
+    process_results: !function utils.process_results_qa_bcm
+    metric_list:
+      - metric: exact_match
+        aggregation: mean
+        higher_is_better: true
+      - metric: f1
+        aggregation: mean
+        higher_is_better: true
+
+  - task: benczechmark_cs_triviaqa_4
+    task_alias: prompt-4
+    class: !function utils.BCZMTask
+    dataset_path: CZLC/cs_triviaqa
+    output_type: generate_until
+    test_split: test
+    training_split: test
+    fewshot_split: test
+    num_fewshot: 3
+    fewshot_delimiter: "\n\n"
+    target_delimiter: ""
+    description: "Úloha: Najděte odpovědi na tato dotazy (Na závěr odpovědi přidejte symbol '\n\n'):\n\n"
+    doc_to_text: "Dotaz: {{question}}?\nNalezená odpověď: "
+    doc_to_target: "{{answers}}"
+    generation_kwargs:
+      until:
+        - "\n\n"
+        - "</s>"
+        - "Otázka:"
+        - "Dotaz:"
+        - "<|im_end|>"
+      do_sample: false
+      temperature: 0.0
+      max_gen_toks: 15
+    filter_list:
+      - name: remove_whitespace
+        filter:
+          - function: remove_whitespace
+          - function: take_first
+    process_results: !function utils.process_results_qa_bcm
+    metric_list:
+      - metric: exact_match
+        aggregation: mean
+        higher_is_better: true
+      - metric: f1
+        aggregation: mean
+        higher_is_better: true

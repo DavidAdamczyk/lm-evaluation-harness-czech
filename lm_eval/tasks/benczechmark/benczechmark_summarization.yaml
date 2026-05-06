@@ -1,0 +1,137 @@
+group: benczechmark_summarization
+group_alias: Czech Benchmark Summarization
+task:
+  - task: benczechmark_summarization_0
+    task_alias: prompt-0
+    class: !function utils.BCZMTask
+    dataset_path: CZLC/sumeczech_downsampled
+    output_type: generate_until
+    training_split: train
+    validation_split: validation
+    test_split: test
+    fewshot_split: train
+    num_fewshot: 3
+    description: "Následuje text a jeho souhrn (33 až 51 slov). Souhrn končí znakem '\n\n'.\n"
+    doc_to_text: "{{text}}\nSouhrn: "
+    doc_to_target: abstract
+    target_delimiter: ""
+    generation_kwargs:
+      until:
+        - "\n\n"
+        - "</s>"
+        - "<|im_end|>"
+      do_sample: false
+      temperature: 0.0
+      max_gen_toks: 128
+    metric_list:
+      - metric: !function utils.rouge_raw_r2_mid_f_without_bootstrap
+        higher_is_better: true
+        aggregation: mean
+
+  - task: benczechmark_summarization_1
+    task_alias: prompt-1
+    class: !function utils.BCZMTask
+    dataset_path: CZLC/sumeczech_downsampled
+    output_type: generate_until
+    training_split: train
+    validation_split: validation
+    test_split: test
+    fewshot_split: train
+    num_fewshot: 3
+    description: "Psaní krátkého(33 až 51 slov) shrnutí textu. Vždy ukončeno znakem '\n\n'.\n"
+    doc_to_text: "{{text}}\nShrnutí: "
+    doc_to_target: abstract
+    target_delimiter: ""
+    generation_kwargs:
+      until:
+        - "\n\n"
+        - "</s>"
+        - "<|im_end|>"
+      do_sample: false
+      temperature: 0.0
+      max_gen_toks: 128
+    metric_list:
+      - metric: !function utils.rouge_raw_r2_mid_f_without_bootstrap
+        higher_is_better: true
+        aggregation: mean
+
+  - task: benczechmark_summarization_2
+    task_alias: prompt-2
+    class: !function utils.BCZMTask
+    dataset_path: CZLC/sumeczech_downsampled
+    output_type: generate_until
+    training_split: train
+    validation_split: validation
+    test_split: test
+    fewshot_split: train
+    num_fewshot: 3
+    description: "Příklady sumarizace textu. Délka (33 až 51 slov). Ukončeno znakem '\n\n'.\n"
+    doc_to_text: "{{text}}\nSumarizace: "
+    doc_to_target: abstract
+    target_delimiter: ""
+    generation_kwargs:
+      until:
+        - "\n\n"
+        - "</s>"
+        - "<|im_end|>"
+      do_sample: false
+      temperature: 0.0
+      max_gen_toks: 128
+    metric_list:
+      - metric: !function utils.rouge_raw_r2_mid_f_without_bootstrap
+        higher_is_better: true
+        aggregation: mean
+
+  - task: benczechmark_summarization_3
+    task_alias: prompt-3
+    class: !function utils.BCZMTask
+    dataset_path: CZLC/sumeczech_downsampled
+    output_type: generate_until
+    training_split: train
+    validation_split: validation
+    test_split: test
+    fewshot_split: train
+    num_fewshot: 3
+    description: "Přepis textu do 33 až 51 slovní TLDR verze. Končí řetězcem '\n\n'.\n"
+    doc_to_text: "{{text}}\nTLDR: "
+    doc_to_target: abstract
+    target_delimiter: ""
+    generation_kwargs:
+      until:
+        - "\n\n"
+        - "</s>"
+        - "<|im_end|>"
+      do_sample: false
+      temperature: 0.0
+      max_gen_toks: 128
+    metric_list:
+      - metric: !function utils.rouge_raw_r2_mid_f_without_bootstrap
+        higher_is_better: true
+        aggregation: mean
+
+  - task: benczechmark_summarization_4
+    task_alias: prompt-4
+    class: !function utils.BCZMTask
+    dataset_path: CZLC/sumeczech_downsampled
+    output_type: generate_until
+    training_split: train
+    validation_split: validation
+    test_split: test
+    fewshot_split: train
+    num_fewshot: 3
+    description: "Shrň následující texty do 33 až 51 slov. Ukonči shrnutí symbolem '\n\n'.\n"
+    doc_to_text: "{{text}}\nShrnutí: "
+    doc_to_target: abstract
+    target_delimiter: ""
+    generation_kwargs:
+      until:
+        - "\n\n"
+        - "</s>"
+        - "<|im_end|>"
+      do_sample: false
+      temperature: 0.0
+      max_gen_toks: 128
+    metric_list:
+      - metric: !function utils.rouge_raw_r2_mid_f_without_bootstrap
+        higher_is_better: true
+        aggregation: mean

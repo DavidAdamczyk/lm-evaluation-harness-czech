@@ -1,0 +1,21 @@
+group: benczechmark_extended
+group_alias: BenCzechMark Extended (broader Czech LM evaluation)
+task:
+  - benczechmark_hellaswag
+  - benczechmark_sentiment_fb
+  - benczechmark_sentiment_csfd
+  - benczechmark_sentiment_mall
+  - benczechmark_czechnews
+  - benczechmark_csfever_nli
+  - benczechmark_cs_snli
+  - benczechmark_cermat_czech_mc
+  - benczechmark_cermat_math_mc
+  - benczechmark_umimeto_biology
+  - benczechmark_umimeto_chemistry
+  - benczechmark_umimeto_czech
+  - benczechmark_umimeto_history
+  - benczechmark_umimeto_informatics
+  - benczechmark_umimeto_math
+  - belebele_ces_Latn
+metadata:
+  version: 1.0
