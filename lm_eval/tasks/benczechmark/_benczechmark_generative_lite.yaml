@@ -1,0 +1,8 @@
+group: benczechmark_generative_lite
+group_alias: BenCzechMark Generative (5 prompt variants per task)
+task:
+  - benczechmark_cs_triviaqa
+  - benczechmark_sqad32
+  - benczechmark_summarization
+metadata:
+  version: 1.0

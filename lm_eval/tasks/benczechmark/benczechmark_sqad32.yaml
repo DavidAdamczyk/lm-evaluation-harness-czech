@@ -23,6 +23,8 @@ task:
         - "Dotaz:"
         - "<|im_end|>"
         - "Kontext:"
+        - "<turn|>"
+        - "<end_of_turn>"
       do_sample: false
       temperature: 0.0
       max_gen_toks: 20
@@ -62,6 +64,8 @@ task:
         - "Dotaz:"
         - "<|im_end|>"
         - "Kontext:"
+        - "<turn|>"
+        - "<end_of_turn>"
       do_sample: false
       temperature: 0.0
       max_gen_toks: 20
@@ -101,6 +105,8 @@ task:
         - "Dotaz:"
         - "<|im_end|>"
         - "Kontext:"
+        - "<turn|>"
+        - "<end_of_turn>"
       do_sample: false
       temperature: 0.0
       max_gen_toks: 20
@@ -140,6 +146,8 @@ task:
         - "Dotaz:"
         - "<|im_end|>"
         - "Kontext:"
+        - "<turn|>"
+        - "<end_of_turn>"
       do_sample: false
       temperature: 0.0
       max_gen_toks: 20
@@ -179,6 +187,8 @@ task:
         - "Dotaz:"
         - "<|im_end|>"
         - "Kontext:"
+        - "<turn|>"
+        - "<end_of_turn>"
       do_sample: false
       temperature: 0.0
       max_gen_toks: 20

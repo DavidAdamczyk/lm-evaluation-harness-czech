@@ -20,6 +20,8 @@ task:
         - "\n\n"
         - "</s>"
         - "<|im_end|>"
+        - "<turn|>"
+        - "<end_of_turn>"
       do_sample: false
       temperature: 0.0
       max_gen_toks: 128
@@ -47,6 +49,8 @@ task:
         - "\n\n"
         - "</s>"
         - "<|im_end|>"
+        - "<turn|>"
+        - "<end_of_turn>"
       do_sample: false
       temperature: 0.0
       max_gen_toks: 128
@@ -74,6 +78,8 @@ task:
         - "\n\n"
         - "</s>"
         - "<|im_end|>"
+        - "<turn|>"
+        - "<end_of_turn>"
       do_sample: false
       temperature: 0.0
       max_gen_toks: 128
@@ -101,6 +107,8 @@ task:
         - "\n\n"
         - "</s>"
         - "<|im_end|>"
+        - "<turn|>"
+        - "<end_of_turn>"
       do_sample: false
       temperature: 0.0
       max_gen_toks: 128
@@ -128,6 +136,8 @@ task:
         - "\n\n"
         - "</s>"
         - "<|im_end|>"
+        - "<turn|>"
+        - "<end_of_turn>"
       do_sample: false
       temperature: 0.0
       max_gen_toks: 128

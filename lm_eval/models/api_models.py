@@ -331,7 +331,12 @@ class TemplateAPI(TemplateLM):
         self, chat_history: List[Dict[str, str]], add_generation_prompt: bool = True
     ) -> Union[str, JsonChatStr, List[Dict]]:
         """Applies a chat template to a list of chat history between user and model."""
-        if self.tokenizer_backend == "huggingface" and self.tokenized_requests:
+        # If a HuggingFace tokenizer is available, always render the chat template
+        # to a flat string. This is required for loglikelihood requests (whose
+        # `_encode_pair` operates on `str`); it is also valid for the completions
+        # API (string-prompt). Endpoints that need a chat list (e.g. /v1/chat/completions)
+        # configure `tokenizer_backend=None`, falling through to the JsonChatStr branch.
+        if self.tokenizer_backend == "huggingface" and self.tokenizer is not None:
             return self.tokenizer.apply_chat_template(
                 chat_history,
                 tokenize=False,

@@ -678,8 +678,15 @@ def get_task_dict(
     _check_duplicates(get_subtask_list(final_task_dict))
 
     def pretty_print_task(task_name, task_manager, indent: int):
-        yaml_path = task_manager.task_index[task_name]["yaml_path"]
-        yaml_path = Path(yaml_path)
+        # Inline sub-tasks defined under a group YAML (with `class:`) may not have
+        # a top-level entry in task_index. Pretty-printing is a logging convenience
+        # — fall back to just the task name if no yaml_path is registered.
+        entry = task_manager.task_index.get(task_name)
+        pad = "  " * indent
+        if entry is None or "yaml_path" not in entry:
+            eval_logger.info(f"{pad}Task: {task_name}")
+            return
+        yaml_path = Path(entry["yaml_path"])
         lm_eval_tasks_path = Path(__file__).parent
         try:
             display_path = yaml_path.relative_to(lm_eval_tasks_path)
@@ -687,7 +694,6 @@ def get_task_dict(
             # Path is outside lm_eval/tasks (e.g., from include_path)
             display_path = yaml_path
 
-        pad = "  " * indent
         eval_logger.info(f"{pad}Task: {task_name} ({display_path})")
 
     # NOTE: Only nicely logs:
