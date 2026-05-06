@@ -58,7 +58,7 @@ Plný popis v [REPORT.md](REPORT.md). TL;DR ranking ze 6 task families (acc, vy�
 
 **Doporučení pro DGX Spark:** Qwen3.6-27B pro nejvyšší kvalitu, Qwen3.6-35B-A3B pro vyšší propustnost, Gemma 4 rodina se pro česky-první aplikace nedoporučuje (~24 p.b. propad).
 
-Hellaswag hodnoty jsou z `--limit 1000`; ostatní z `--limit 200`. Detailní rozpis Qwen3.6-27B přes 16 BCM kategorií najdeš v REPORT.md.
+Hellaswag hodnoty jsou z `--limit 1000`; ostatní z `--limit 200`. Plný [REPORT.md](REPORT.md) obsahuje navíc detailní rozpis Qwen3.6-27B přes 16 BCM kategorií a srovnání s 20+ modely z oficiálního [BenCzechMark leaderboardu](https://huggingface.co/spaces/CZLC/BenCzechMark) (DeepSeek V3/R1, Qwen2.5, Llama 3.x/4.x, Gemma 2/3, Mistral, …).
 
 ---
 
