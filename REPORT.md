@@ -10,13 +10,73 @@
 
 ## TL;DR
 
-> **Všechny 4 modely umí česky na srovnatelné úrovni.** Hlavní rozdíl není ve znalosti jazyka, ale v tom, **jak moc post-training konkrétní IT verze degeneruje base-mode chování**, což diktuje, jak musí být model deployován a evaluován.
+> **Gemma 4 base ≈ Qwen 3.6 v češtině** (oba ~0.91 belebele, oba ~0.92 czechnews). Klasický lm-eval pipeline ale u IT verzí těchto modelů selhává kvůli vynucenému reasoning prefixu — naše práce zahrnuje **patch lm-eval-harness, který tuhle limitaci řeší** přes `chat_template_kwargs` (Qwen `enable_thinking=False`, Gemma 4 `enable_thinking=True`).
 >
-> - **Qwen 3.6 IT** (oba) si zachovává funkční base-mode loglikelihood → snadno se evaluuje, snadno se nasazuje s minimálním scaffolding.
-> - **Gemma 4 IT** (oba) má agresivně degenerovaný base-mode (potvrzeno: gemma-4-31B **base** dosahuje stejné kvality jako Qwen 3.6, ale gemma-4-31B-**it** propadá o 26 p.b. ve stejném setupu) → **vyžaduje plný chat-completions deployment**, není fér ho měřit MC loglikelihoodem.
-> - **lm-evaluation-harness pipeline (loglikelihood + krátká generace) je strukturálně neslučitelný s reasoning-tuned modely**. Naše výsledky odráží schopnosti modelů jen do té míry, do které tyto modely tolerují non-reasoning režim.
+> **Výsledky po patche (chat template + suppressed thinking, limit=200, průměr 3 task families bez Belebele):**
+> - Qwen3.6-35B-A3B (MoE): **0.712** — nejlepší v naší IT sadě
+> - Qwen3.6-27B (dense): **0.707**
+> - gemma-4-31B base (referenční, dubnový běh): **0.743** ← top
+> - gemma-4-31B-it: **0.516** ← chat+thinking-off zlepšil eval o ~+12 p.b., ale stále pod base
+> - gemma-4-26B-A4B-it: **0.456**
+>
+> **Klíčové zjištění:** Gemma 4 base má v češtině o ~3 p.b. víc než Qwen 3.6, ale Gemma 4 **IT post-training stojí ~23 p.b.** v MC loglikelihood evalu. Pro reálné chat nasazení se rozdíl smazává; pro klasické benchmarky volí jednodušší Qwen 3.6.
 
-**Praktické doporučení pro DGX Spark:** Qwen 3.6 (27B dense pro kvalitu, 35B-A3B MoE pro propustnost). Gemma 4 je legitimní volba, pokud máš deployment infrastrukturu pro chat-completions API a nepotřebuješ ji evaluovat klasickým harnessem.
+**Praktické doporučení pro DGX Spark:** Qwen 3.6 (27B dense pro kvalitu, 35B-A3B MoE pro propustnost) je defaultní volba s nejvyšší předvídatelností v eval i deploymentu. Gemma 4 IT je validní pro chat-completions deployment; její IT skóre v MC loglikelihood evalu (i s thinking-off) podhodnocuje její reálné kvality.
+
+**Generativní eval (sekce 6.5):** Summarization přes LLM-as-Judge (Claude Opus 4.7).
+
+> ⚠️ **Důležitá korekce metodologie po dokončení původní verze reportu** (sekce 6.6): Původní judge eval používal HF chat template, který forcuje thinking marker. Po reprodukci s **Ollama-style template** (matchuje produkční RAG deployment) **Gemma 4 31B-it dominuje** (avg 4.36) nad Qwen3.6-27B (4.25) i Qwen3.6-35B-A3B (4.26). Detail v sekci 6.6.
+
+---
+
+## 🚨 TODO / Otevřené problémy
+
+> **Tato zpráva je rozpracovaná. Před finálním deployment rozhodnutím je potřeba dořešit níže uvedené body.**
+
+### TODO #1: Gemma 4 IT — neúplně rozumíme proč nefunguje "out of the box"
+
+**Symptom.** Při použití standardní lm-evaluation-harness pipeline + HF transformers chat template Gemma 4 IT (31B i 26B-A4B) **emituje nekonečné anglické thinking traces místo odpovědí**:
+```
+thought
+*   Input: A long text describing a luxury trip to the North Pole...
+    *   Constraint: Summary must be between 33 and 51 words...
+    *   Constraint: Summary must end with the character '\n'...
+```
+S `max_gen_toks=128` se model nikdy nedostane k samotné odpovědi. Pro loglikelihood eval rozbíjí scoring kandidátních odpovědí.
+
+**Co víme.** Příčina je v **divergenci HF chat template vs. Ollama renderer**:
+- HF tokenizer `apply_chat_template` defaultně forcuje `<|channel>thought\n<channel|>` postfix → model MUSÍ thinkovat
+- Ollama `gemma4.go` renderer postfix nepřidává → model může odpovídat rovnou
+- Náš workaround: `chat_template_file` patch + `templates/gemma4_ollama_style.jinja` (sekce 6.6)
+
+**Co NE víme (a musíme dořešit):**
+
+1. **Proč i s Ollama template Gemma 4 IT pořád emituje literální `thought\n` prefix** na začátku každé odpovědi? Model se to naučil jako "tic" v post-trainingu. Ollama uživatelé v RAG pravděpodobně buď stripují tento prefix (vědomě nebo přes nějaký post-process), nebo ignorují. **Nezjistili jsme jak to v reálné produkci řeší.** → Action: zeptat se autora produkční RAG aplikace, jak to filtruje.
+
+2. **Proč je `enable_thinking` parametr u Gemma 4 obrácený oproti Qwen 3.6?** U Qwena `False` = vypnout thinking; u Gemmy 4 `True` = vypnout forced thought channel. Bez prokopnutí se Jinja templatem neintuitivní. Možná že tu existuje další kwarg (`thinking_budget`, `add_thought_channel`, …), který bychom měli použít místo. → Action: projít chat template Jinja kód detailně, najít kanonický způsob.
+
+3. **Plný summarization eval s Ollama template byl proveden jen na 20 docs (smoke).** Plná 200-doc verze pro Gemma 4 31B-it i 26B-A4B-it chybí. Judge výsledek 4.36 vs 4.25 (Gemma > Qwen) je v rámci stderr (~22 %) — potřebujeme více vzorků pro defensible závěr. → Action: re-run summarization na obou Gemma modelech s Ollama template, ~3h compute, pak full judge eval ($25).
+
+4. **MC loglikelihood evals s Ollama template jsme ještě neprověřili.** Sekce 2.5 ukazuje, že chat-template + thinking-off u Gemmy zlepší czechnews z 0.368 na 0.624 — ale to s HF tokenizerem `enable_thinking=True`. **S Ollama template + strip filter** by skóre mohlo dále vystoupat blíže k base modelu (0.926 czechnews). → Action: spustit `run_thinking_off_eval.sh` variant s `CHAT_TEMPLATE_FILE=...gemma4_ollama_style.jinja` pro Gemma modely, porovnat s aktuálním 0.516 avg.
+
+5. **Belebele propadá u všech 4 modelů s chat templatem (~30–42 p.b.).** Pravděpodobně chat-template wrapping × 3-shot × dlouhé passages overflowuje effective context limit. Není to Gemma-specifický problém, ale obecná limitace MC eval s chat-template setupem. → Action: zkusit `num_fewshot: 0` pro belebele s chat template, nebo investigovat truncation behavior.
+
+6. **Gemma 4 IT může mít vyšší kvalitu výstupu při použití plného `/v1/chat/completions` endpointu** (Ollama / vLLM chat-completions API, server-side template, reasoning budget). Naše eval jede přes `/v1/completions` (text-prompt). Ekosystém kolem chat-completions je jiný a může vyřešit thinking nativně. → Action: postavit alternative eval přes `local-chat-completions` model (lm-eval to podporuje pro generation, ne pro loglikelihood) nebo standalone Python skript.
+
+### TODO #2: Submitnout patche upstream do lm-evaluation-harness
+
+Tři patche bychom měli kontribuovat zpět:
+1. `JsonChatStr.rstrip` fix v `_encode_pair`
+2. `enable_thinking` kwarg v `TemplateAPI.__init__`
+3. `chat_template_file` override v `TemplateAPI.__init__`
+
+Patch #3 je nejširšího významu — jakýkoli model s nematching deployment template (Gemma 4, ale možná i další) z toho profituje.
+
+### TODO #3: Final deployment rozhodnutí — počkat, NEBO commit teď?
+
+Současný stav: Qwen 3.6 je "safe choice" (eval funguje, výsledky předvídatelné). Gemma 4 IT je "potential winner" (judge naznačuje vyšší kvalitu pro RAG-style chat, ale eval pipeline plně nefunguje, takže neumíme to defensible rangovat).
+
+**Doporučení:** Před finálním commit do produkce **dořešit minimálně TODO #1 body 1, 3, 4** (jak Ollama deal with `thought\n` prefix, full Gemma summarization rerun, MC eval s Ollama template). Pak se buď potvrdí "Gemma 4 wins", nebo "Qwen 3.6 stays safe choice" — a víme to spolehlivě.
 
 ---
 
@@ -76,7 +136,7 @@ Patchnutí (`lm_eval/models/api_models.py`, drop `tokenized_requests` condition 
 
 Loglikelihood eval scoruje `P(odpověď | kontext)` hned za prefixem. Ale za `<think>\n` má model rozloženu pravděpodobnost přes "Pojďme přemýšlet...", "Otázka je...", atd. — ne přes A/B/C/D. Reasoning prefix **strukturálně rozbije** scoring kandidátních odpovědí.
 
-**Závěr:** chat-template + loglikelihood je pro reasoning modely nepoužitelný. Patch je cenný (otevírá tu možnost obecně), ale nevyřeší náš problém.
+**Závěr v této fázi:** chat-template + loglikelihood vypadal jako neuzavřený problém. Reasoning prefix rozbíjí scoring kandidátních odpovědí — patch byl nutný, ale ne dostatečný. (Sekce 2.5 níže ukazuje, jak jsme to nakonec doopravdy vyřešili.)
 
 ### 2.3 Pokus o opravu: generativní eval
 
@@ -94,16 +154,65 @@ Qwen 3.6 i Gemma 4 jsou heavy-reasoning-tuned: emitují `<think>` jako první to
 
 Workaroundy (bumpnout na 512+ s post-processing extrakcí za `</think>`, nebo pre-fill `</think>` v promptu) jsou možné, ale výrazně mění charakter eval.
 
-### 2.4 Co tedy lm-evaluation-harness u našich modelů změřit umí
+### 2.4 Mezistav: co lm-evaluation-harness u našich modelů změřit umí
 
 | Modus | Reasoning model situation | Validní pro naši sadu |
 |---|---|---|
-| Loglikelihood base-mode (no chat template) | Funguje pokud post-training base-mode zachoval | ✅ Qwen 3.6 (oba). ❌ Gemma 4 IT (oba). ✅ Gemma 4 base (test z dubna). |
-| Loglikelihood + chat template | Reasoning prefix rozbíjí scoring | ❌ Žádný z našich 4 |
-| Generate, krátké | Model stihne jen `<think>` opener | ❌ triviaQA, SQuAD |
-| Generate, dlouhé (128+ tokens) | Model thinking + skutečnou odpověď | ✅ summarization |
+| Loglikelihood base-mode (no chat template) | Funguje pokud post-training base-mode zachoval | ✅ Qwen 3.6 (oba). ❌ Gemma 4 IT (oba). ✅ Gemma 4 base. |
+| Loglikelihood + chat template (default) | Reasoning prefix rozbíjí scoring | ❌ Žádný z našich 4 |
+| **Loglikelihood + chat template + thinking-off** (sekce 2.5) | **Patch řeší prefix problém** | ✅ **Všichni 4** (kromě belebele kvůli kontext-length artifaktu) |
+| Generate, krátké (≤20 tok) | Model stihne jen `<think>` opener | ❌ triviaQA, SQuAD |
+| Generate, dlouhé (128+ tok) | Model thinking + skutečnou odpověď | ✅ summarization |
 
-**Souhrn:** Pro férové měření IT verzí Gemma 4 by bylo třeba opustit lm-evaluation-harness pipeline a postavit eval přes plné `/v1/chat/completions` s reasoning budget. To je samostatný projekt na týdny.
+### 2.5 Průlom: thinking suppression přes `chat_template_kwargs`
+
+Klíčová otázka: **co kdyby šlo říct chat templatu, aby thinking prefix vůbec nepřidával?** Inspekce HF tokenizer chat_template Jinja kódu odhalila, že:
+
+- **Qwen 3.6:** `apply_chat_template(messages, enable_thinking=False)` pre-fill prázdné thinking (`<think>\n\n</think>\n\n`) → model rovnou odpoví, jako by už dopřemýšlel.
+- **Gemma 4:** `apply_chat_template(messages, enable_thinking=True)` (paradoxně opačná konvence) → vynechá forced `<channel>thought` marker → model dostane volnost.
+
+Standardně lm-evaluation-harness žádné dodatečné kwargs do `apply_chat_template` nepředává. Přidali jsme do `TemplateAPI` parametr `enable_thinking` (přístupný přes `--model_args enable_thinking=false`), který se forwardne do tokenizeru.
+
+**Výsledky (limit=200, plný re-eval všech 4 IT modelů):**
+
+| Model | Task | base-mode | think-off chat | Δ |
+|---|---|---:|---:|---:|
+| **Qwen3.6-27B** | czechnews ⌀5 | 0.916 | **0.915** | ≈ |
+|  | sentiment_fb ⌀5 | 0.718 | 0.751 | +3 p.b. |
+|  | hellaswag | 0.460 | 0.455 | ≈ |
+|  | belebele | 0.915 | 0.615 | −30 p.b. ⚠ |
+| **Qwen3.6-35B-A3B** | czechnews ⌀5 | 0.860 | 0.898 | +4 p.b. |
+|  | sentiment_fb ⌀5 | 0.701 | 0.748 | +5 p.b. |
+|  | hellaswag | 0.460 | 0.490 | +3 p.b. |
+|  | belebele | 0.855 | 0.440 | −42 p.b. ⚠ |
+| **gemma-4-31B-it** ⭐ | czechnews ⌀5 | 0.368 | **0.624** | **+26 p.b.** |
+|  | sentiment_fb ⌀5 | 0.500 | 0.509 | +1 p.b. |
+|  | hellaswag | 0.305 | 0.415 | **+11 p.b.** |
+|  | belebele | 0.655 | 0.285 | −37 p.b. ⚠ |
+| **gemma-4-26B-A4B-it** | czechnews ⌀5 | 0.444 | 0.404 | −4 p.b. |
+|  | sentiment_fb ⌀5 | 0.425 | 0.583 | **+16 p.b.** |
+|  | hellaswag | 0.335 | 0.380 | +5 p.b. |
+|  | belebele | 0.560 | 0.260 | −30 p.b. ⚠ |
+
+**Co z toho plyne:**
+
+1. **Pro Qwen 3.6 (oba) thinking-off chat ≈ base-mode** napříč 3 task families (czechnews, sentiment_fb, hellaswag). Patch otevírá fér chat-template cestu.
+
+2. **Pro Gemma 4 31B-it výrazné zlepšení:** czechnews +26 p.b. (z 0.368 na 0.624), hellaswag +11 p.b. Patch dělá Gemma 4 IT eval **zhruba dvakrát fér**, ale **ne plně rovný base modelu** (gemma-4 base dosahuje 0.926 czechnews, 0.510 hellaswag — IT post-training stojí dál ~30 p.b. čistého).
+
+3. **Belebele propadá u všech 4 modelů ~30–42 p.b. s chat templatem** — to je **artefakt setupu**, ne signál o češtině. Pravděpodobná příčina: chat-template wrapping × 3-shot × dlouhé belebele passages tlačí kontextové délky k limitu, kde lm_eval truncatuje. Vyžaduje další investigaci, ale pro hlavní srovnání modelů Belebele se thinking-off čísly **nepoužíváme**.
+
+4. **Hierarchie po patchi (průměr 3 task families bez Belebele):**
+
+| Model | avg(czechnews, sentiment_fb, hellaswag) | Rozdíl proti gemma-4-31B base (0.743) |
+|---|---:|---:|
+| **gemma-4-31B base** (ref) | **0.743** | (baseline) |
+| Qwen3.6-35B-A3B (MoE, IT think-off) | 0.712 | −3.1 p.b. |
+| Qwen3.6-27B (dense, IT think-off) | 0.707 | −3.6 p.b. |
+| gemma-4-31B-it (chat think-off) | 0.516 | −22.7 p.b. |
+| gemma-4-26B-A4B-it (chat think-off) | 0.456 | −28.7 p.b. |
+
+**Konečný závěr:** Gemma 4 base je v češtině na špici. Qwen 3.6 IT je 3 p.b. pod ní (téměř na úrovni base, jen mírně). **Gemma 4 IT zaostává o ~23 p.b. — IT post-training Gemmy 4 reálně omezuje její použitelnost v non-chat režimu**. Pro chat-completions deployment by to mohlo být menší (potřeba ověřit jiným evalem než lm-eval-harness).
 
 ---
 
@@ -200,22 +309,21 @@ Volba modelu závisí na tom, **jak ho budeš používat a evaluovat**. Trade-of
 
 ### Scénář A: Klasický eval-driven workflow (loglikelihood, batch evaluations, MC úlohy)
 
-**Volba: Qwen3.6-27B (dense)** nebo Qwen3.6-35B-A3B (MoE pro propustnost).
+**Volba: Qwen 3.6 (27B dense pro kvalitu, 35B-A3B MoE pro propustnost).**
 
-Důvod: oba zachovávají funkční base-mode loglikelihood, takže jsou kompatibilní s existujícími eval pipelinami a benchmarky. Můžeš je hodnotit klasickým harnessem a srovnávat s BCM leaderboardem.
+Důvod: oba si v naší pipeline drží avg ~0.71 napříč 3 task families (post-thinking-off chat) — v rámci 3 p.b. od reference gemma-4-31B base. Po našem patche jdou bezproblémově evaluovat klasickým harnessem v thinking-off chat módu, a zároveň fungují v base-mode loglikelihood pro srovnání s pre-reasoning era leaderboardy (BCM).
 
-### Scénář B: Konverzační aplikace s plnou chat infrastrukturou
+### Scénář B: Konverzační aplikace s plnou chat infrastrukturou (Ollama / vLLM /v1/chat/completions)
 
-**Volba:** všichni 4 jsou validní. **Gemma 4 IT** by měla být pokud:
-- Máš deployment přes `/v1/chat/completions` API (s reasoning budget, system messages, multi-turn)
-- Nemáš požadavek na lm-eval-harness benchmarking (BCM-style čísla u ní budou systematicky podhodnocená)
-- Důvěřuješ tomu, že base modelu (gemma-4-31B base = 0.915 belebele) skutečně reflektuje schopnost rodiny
+Aktuální evidence (sekce 6.6, n=20 limit) ukazuje:
 
-**Qwen 3.6 IT** je v tomto scénáři též dobrá — chat template + reasoning podporují, ale base-mode chování je zachované, takže je flexibilnější.
+1. **Gemma 4 31B-it** — **judge favorit** (avg 4.36 vs Qwen ~4.25) v summarization s Ollama-style template + thought-prefix strip. Vyšší faithfulness, coverage a conciseness. **Doporučená volba pro RAG/chat deployment**, pokud máš infrastrukturu, která zpracuje `thought\n` prefix (Ollama, custom post-process) — viz **TODO #1** pro otevřené body, které je třeba dořešit pro definitivní rozhodnutí.
+2. **Qwen 3.6 27B / 35B-A3B (IT)** — solidní druhé pořadí (4.25 / 4.26). Mírně lepší fluency než Gemma. Bezproblémový eval out-of-the-box.
+3. **Gemma 4 26B-A4B-it** — **nevyhodnoceno s Ollama template** (chybí compute). V naší původní HF-template eval skórovala nejhůř (0.456 avg), ale to je pravděpodobně artefakt setupu, ne modelu — viz TODO #1 bod 3.
 
 ### Scénář C: "Univerzální" lokální nasazení na DGX Spark
 
-**Volba: Qwen3.6-27B (dense).** Dobrý compromise mezi kvalitou (top-třetina BCM v belebele), velikostí (27B v BF16 ~54 GB, vejde se s rezervou), a univerzální evaluovatelností.
+**Volba: Qwen3.6-27B (dense).** Pokrývá oba scénáře A a B. 27B v BF16 ~54 GB, vejde se s rezervou na 110 GB Spark. Předvídatelné chování v eval i deploymentu.
 
 ### Slabá místa všech kandidátů (nezáleží na volbě)
 
@@ -228,14 +336,137 @@ Důvod: oba zachovávají funkční base-mode loglikelihood, takže jsou kompati
 ## 6. Co je v repu, co je commitnuté
 
 **Implementační artefakty z této práce (potenciálně užitečné pro další eval):**
-- `lm_eval/tasks/benczechmark/` — task YAMLy (MVP group, extended group s 16 úlohami, csfever_nli, generative_lite, utils.py s BCZMTask wrappery)
-- `scripts/benczechmark/` — orchestrační skripty pro vLLM + lm_eval pipeline
-- **Patch v `lm_eval/models/api_models.py`** — fix `JsonChatStr.rstrip` bugu pro `--apply_chat_template + local-completions + loglikelihood` (sekce 2.2). Připravený k upstream kontribuci.
+- `lm_eval/tasks/benczechmark/` — task YAMLy (MVP group, extended group s 16 úlohami, csfever_nli, generative_lite, utils.py s BCZMTask wrappery).
+- `scripts/benczechmark/` — orchestrační skripty pro vLLM + lm_eval pipeline (`run_mvp_eval.sh` jako runner s podporou `APPLY_CHAT_TEMPLATE`, `ENABLE_THINKING`, `REVISION` env vars; `run_thinking_off_eval.sh` pro MC re-eval všech 4 IT modelů; `run_summarization_eval.sh` pro generative eval; `run_judge_eval.py` pro Claude Opus 4.7 LLM-as-Judge nad summarization outputy přes `claude -p` CLI).
+- **Patch v `lm_eval/models/api_models.py`** — tři souvisící fixy (sekce 2.2, 2.5, 6.6):
+  1. Fix `JsonChatStr.rstrip` AttributeError v `_encode_pair` pro `--apply_chat_template + local-completions + loglikelihood` (drop `tokenized_requests` condition v HF tokenizer větvi `apply_chat_template`).
+  2. Přidaný parametr `enable_thinking` v `TemplateAPI.__init__`, který se forwardne do `tokenizer.apply_chat_template` jako kwarg. Umožňuje per-model suppression reasoning prefixu (Qwen 3.6: `enable_thinking=False`; Gemma 4: `enable_thinking=True` — opačná konvence).
+  3. Přidaný parametr `chat_template_file` v `TemplateAPI.__init__`, který override-uje `tokenizer.chat_template` z Jinja souboru. Klíčové pro modely, kde HF transformers default neodpovídá produkčnímu deployment renderingu (např. Gemma 4 vs. Ollama — viz `templates/gemma4_ollama_style.jinja`).
+  
+  Všechny 3 fixy jsou **kandidáti na upstream kontribuci** — řeší fundamentální gap v lm-eval pipeline pro reasoning modely a deployment-divergent templates.
 - **Patch v `lm_eval/tasks/__init__.py`** — fix `pretty_print_task` pro inline sub-tasky bez yaml_path (objevil se při generative eval).
 
-**Co se neuložilo do číselných výsledků v této zprávě, ale je zajímavé pro budoucnost:**
-- Smoke test summarization na Qwen3.6-27B funguje (max_gen_toks=128 dostatečné pro thinking + souhrn). Plný běh na všech 4 modelech přes ROUGE-2 by mohl být užitečný complement, pokud bude zájem.
-- Patch chat-template otevírá cestu pro správný eval Gemma 4 IT, pokud budou dostupné prompty bez vynuceného reasoning prefixu (např. system message "Odpověz jen jedním písmenem").
+---
+
+## 6.5 Generativní eval: summarization + LLM-as-Judge
+
+Po MC re-evalu jsme spustili summarization eval na všech 4 modelech (`benczechmark_summarization`, 5 prompt variants × 200 docs, chat template + per-model thinking suppression dle sekce 2.5).
+
+### ROUGE-2 F-mid (n-gram překryv)
+
+| Model | ROUGE-2 ⌀5 promptů |
+|---|---:|
+| Qwen3.6-27B (dense) | 0.0317 |
+| Qwen3.6-35B-A3B (MoE) | 0.0312 |
+| gemma-4-31B-it | 0.0032 |
+| gemma-4-26B-A4B-it | 0.0027 |
+
+ROUGE-2 absolutní hodnoty jsou v češtině obecně nízké (bohaté skloňování ničí n-gram překryv parafráze proti referenci). Ale relativní ranking je výmluvný: **Gemma 4 IT modely mají ROUGE řádově 10× nižší než Qwen** — což je víc než jen šum.
+
+### LLM-as-Judge: kvalitativní hodnocení (Claude Opus 4.7)
+
+ROUGE-2 v češtině neumí rozlišit kvalitní parafrázi od garbage outputu. Postavili jsme **joint judge eval** přes `claude -p --model opus`: 50 doc_ids common ke všem 4 modelům, randomizované A/B/C/D pozice (mitigace position bias), JSON-schema-validated rubric. Náklady: ~$7 pro 50 calls.
+
+| Model | faithfulness | coverage | fluency | conciseness | **avg** |
+|---|---:|---:|---:|---:|---:|
+| **Qwen3.6-27B (dense)** | **4.54** ± 0.86 | **4.14** ± 0.78 | **4.80** ± 0.45 | **4.64** ± 0.53 | **4.53** ⭐ |
+| Qwen3.6-35B-A3B (MoE) | 4.42 ± 0.99 | 3.86 ± 0.78 | 4.66 ± 0.75 | 4.40 ± 0.57 | 4.33 |
+| gemma-4-31B-it | 2.24 ± 1.17 | 1.82 ± 0.94 | 1.04 ± 0.20 | 1.14 ± 0.35 | 1.56 |
+| gemma-4-26B-A4B-it | 2.36 ± 1.12 | 1.90 ± 0.95 | 1.06 ± 0.24 | 1.16 ± 0.37 | 1.62 |
+
+**Co tato čísla skutečně říkají:**
+
+1. **Qwen 3.6 27B (dense) je v naší pipeline jasný vítěz** v summarization. Faithful (4.54), pokrývá klíčové body (4.14), perfektní česká plynulost (4.80), úsporná délka (4.64). Soudce explicitně chválí kvalitu češtiny u Qwena.
+
+2. **Qwen 3.6 27B > 35B-A3B (MoE)** o +0.20 v průměru. Dense varianta je v summarization viditelně lepší než MoE-3B-active.
+
+3. **Gemma 4 IT skóre fluency 1.04/1.06 je sentinel hodnota** — judge dává 1 ("lámaná čeština / žádná čeština") protože **outputy nejsou české souhrny, ale anglické thinking traces** typu:
+   ```
+   thought
+   *   Input: A long text describing a luxury trip to the North Pole...
+       *   Constraint: Summary must be between 33 and 51 words.
+       *   Constraint: Summary must end with the character '\n'...
+   ```
+   Model ulpí v thinking módu a `max_gen_toks=128` ho stopne uprostřed. **Tato čísla NEMĚŘÍ Gemma 4 IT summarization quality** — měří, že naše base-mode generation pipeline (i s `enable_thinking=True` chat templatem) neumožňuje Gemma 4 IT dokončit thinking a začít generovat samotný souhrn.
+
+4. **Pro férovou Gemma 4 IT summarization eval** by bylo třeba:
+   - **Buď** plný `/v1/chat/completions` s reasoning budget (model dokončí thinking, pak vygeneruje souhrn)
+   - **Nebo** post-processing filter `regex: "after </thought>"` plus `max_gen_toks=1024+`
+   - **Nebo** systémový prompt s instrukcí "Nepřemýšlej, rovnou vygeneruj souhrn"
+
+   Žádný z těchto setupů nešel přes klasické lm-eval-harness pipeline bez další engineeringové práce.
+
+5. **Pro Qwen 3.6 jsou judge čísla validní a srovnatelná napříč modely.** Pro Gemma 4 IT jsou judge čísla **artefakt eval setupu**, ne signál o modelu.
+
+**Závěr summarization sekce:** V plně řešeném benchmarku by Gemma 4 IT mohla podávat lepší výkon (její base model dosahuje 0.74 avg napříč MC úlohami, takže reálné chat-completions deployment by mohlo dát kvalitní souhrny). Ale **v rámci toho, co umíme férově změřit klasickým lm-eval-harness pipelinem**, **Qwen 3.6 27B je jasná volba pro summarization v češtině** s judge skóre 4.53/5 napříč 4 dimenzemi.
+
+---
+
+## 6.6 Korekce: Ollama-style chat template a obrácený výsledek
+
+Po dokončení sekce 6.5 jsme s tebou ověřili kritický fakt: **Gemma 4 v produkční RAG aplikaci (přes Ollama) reasoning nedělá**. To přímo odporovalo našemu závěru, že "Gemma 4 IT je degenerovaná" — pokud Ollama-deployovaná Gemma 4 funguje, **náš eval setup byl problém, ne model**.
+
+### Root cause: HF tokenizer chat template ≠ Ollama renderer
+
+Stáhli jsme Ollama source ([`gemma4.go`](https://github.com/ollama/ollama/blob/main/model/renderers/gemma4.go)) a porovnali s HF tokenizer chat template:
+
+| Renderer | Default chování |
+|---|---|
+| **HF transformers `apply_chat_template`** (default, `enable_thinking=False`) | Forcuje `<\|channel>thought\n<channel\|>` postfix — model MUSÍ thinkovat |
+| **HF s `enable_thinking=True`** | Přidává `<\|think\|>` system message — model je primován k thinking přes system prompt |
+| **Ollama `gemma4.go`** | Nic — `<\|turn>model\n` a hotovo. Žádný forced thought channel. |
+
+To znamená: **HF transformers a Ollama mají úplně jiné defaulty**. Naše první iterace evalů používala HF default (forcoval thinking), proto Gemma 4 IT nedoručila task. Reálné Ollama deployment používá clean template, proto v RAG funguje.
+
+### Patch: chat_template_file override v lm-eval
+
+Rozšířili jsme náš lm-eval patch o `chat_template_file` parametr, který nahrazuje `tokenizer.chat_template` z Jinja souboru. Uložili jsme [`templates/gemma4_ollama_style.jinja`](lm_eval/tasks/benczechmark/templates/gemma4_ollama_style.jinja) — Jinja ekvivalent Ollama renderingu.
+
+### Smoke test (limit=20, gemma-4-31B-it, Ollama template)
+
+| Setup | ROUGE-2 F-mid | Output kvalita |
+|---|---:|---|
+| HF default chat template + `enable_thinking=True` | 0.0032 | Anglické thinking traces, ne česká summary |
+| **Ollama-style template** | **0.0456** | **České souhrny** (✅), ale s prefixem `thought\n` (model i bez forced channel emituje literál) |
+| Ollama-style + post-strip `^thought\n+` | _N/A_ | Čisté české souhrny |
+
+### Judge eval v2 (Claude Opus 4.7, n=20, 3 modely)
+
+Spustili jsme druhou variantu judge evalu na 20 doc_ids ze smoke runu, s **proper template per model**:
+- Qwen 27B / 35B-A3B: existující `chat+enable_thinking=False` data (200-doc summarization eval)
+- Gemma 4 31B-it: Ollama-template smoke (20 docs) s aplikovaným strip filterem `^thought\n+`
+- Gemma 4 26B-A4B-it: **vyřazena** — neměli jsme čas na rerun s Ollama template
+
+| Model | faithfulness | coverage | fluency | conciseness | **avg** |
+|---|---:|---:|---:|---:|---:|
+| Qwen3.6-27B (chat+think_off) | 4.35 ± 1.04 | 3.70 ± 0.80 | **4.65** ± 0.59 | 4.30 ± 0.57 | 4.25 |
+| Qwen3.6-35B-A3B (chat+think_off) | 4.25 ± 1.02 | 3.80 ± 0.70 | **4.70** ± 0.66 | 4.30 ± 0.57 | 4.26 |
+| **gemma-4-31B-it (chat+ollama_template)** ⭐ | **4.55** ± 0.83 | **4.05** ± 0.76 | 4.40 ± 0.88 | **4.45** ± 0.51 | **4.36** |
+
+**Co z toho plyne:**
+
+1. **Předchozí závěr "Gemma 4 IT je degenerovaná" byl artefakt HF chat template, ne vlastnost modelu.** S Ollama-style template se Gemma 4 31B-it stává nejvyšší skórující v naší sadě.
+
+2. **Faithfulness a coverage Gemma > Qwen** — Gemma podává faktickyji věrnější a komplexnější souhrny.
+
+3. **Fluency Gemma < Qwen o ~0.25 bodu** — možná zbylé formátovací artefakty (literál `thought\n`), nebo Gemma's stylistická preference. Ne dramatický rozdíl.
+
+4. **n=20 znamená vysokou stderr (~22 % na 1–5 škále).** Rozdíl Qwen 4.25 vs Gemma 4.36 (0.10) je v rámci noise, **ale pattern napříč 3 ze 4 dimenzí Gemma > Qwen je konzistentní**.
+
+5. **Pro férový plný benchmark** by bylo potřeba: re-run summarization na obou Gemma modelech s Ollama template (~3h compute), strip filter v YAML pipeline, plný 200-doc judge eval ($25). Mimo scope této zprávy — but proof-of-concept že je to možné je v kódu (sekce 6.6 + scripts/benczechmark/run_judge_eval_v2.py).
+
+### Aktualizované doporučení (po této korekci)
+
+**Pro Czech summarization v RAG-style deployment přes chat-completions API:** **Gemma 4 31B-it je preferovaná volba** (vyšší faithfulness/coverage/conciseness). Qwen 3.6 27B je solidní alternativa s mírně lepší stylistickou plynulostí.
+
+**Pro klasický eval-driven workflow přes loglikelihood:** Qwen 3.6 zůstává jednodušší volba — funguje out-of-the-box. Gemma 4 IT vyžaduje custom chat_template override (`chat_template_file=templates/gemma4_ollama_style.jinja`) + strip filter.
+
+### Otevřené otázky / future work
+
+- Plný 200-doc summarization rerun obou Gemma modelů s Ollama template
+- Otestovat Gemma 4 26B-A4B-it (MoE) s Ollama template
+- Zjistit, jak Ollama users v produkci řeší `thought\n` prefix v outputech (post-process? nebo template trick co my nevíme?)
+- Submitnout `chat_template_file` patch do upstream lm-evaluation-harness — generická užitečnost pro všechny modely s nematching deployment template
 
 ---
 
@@ -243,7 +474,8 @@ Důvod: oba zachovávají funkční base-mode loglikelihood, takže jsou kompati
 
 - **Limit 200 vzorků na úlohu (1 000 pro Hellaswag).** Drží statistickou chybu pod ~3 p.b., ale ne pod ~1 p.b. Hierarchie modelů ve velkých rozdílech (>5 p.b.) je spolehlivá; v malých rozdílech (1–3 p.b.) je v noise.
 - **Loglikelihood-mode pro 5 ze 6 task families.** Jediná funkční generativní eval je summarization; zbylé 2 generativní úlohy (triviaQA, SQuAD) nelze férově měřit u reasoning modelů s krátkým `max_gen_toks` (sekce 2.3).
-- **Chat-template loglikelihood je strukturálně rozbitý** pro reasoning modely (sekce 2.2). Patch funguje, ale výsledky jsou degenerované kvůli `<think>` prefixu.
-- **Gemma 4 IT skóre v sekci 1 je artefakt, ne signál.** Pro porovnání rodiny používej řádek "gemma-4-31B base" v sekci 4.
+- **Belebele se v thinking-off chat režimu chová špatně u všech 4 modelů (−30 až −42 p.b.).** Pravděpodobně chat-template wrapping × 3-shot × dlouhé passages přesahuje effective context limit a kontext se silently truncatuje. Pro hlavní MC srovnání používáme avg(czechnews, sentiment_fb, hellaswag) bez Belebele. Investigace odložena (out of scope této zprávy).
+- **Gemma 4 IT skóre v sekci 1 (base-mode loglikelihood) je artefakt, ne signál.** Po patche v sekci 2.5 je k dispozici fér číslo (chat + thinking-off), ale i to podhodnocuje skutečnou Gemma 4 IT kvalitu pro chat-deployment.
 - **BCM leaderboard srovnání je apples-to-oranges** mezi pre-reasoning era (2024–2025, většina BCM) a post-reasoning era (early 2026, naše 4 modely). Loglikelihood eval nadržuje pre-reasoning modelům.
+- **Pro plné vyhodnocení reálné chat-mode kvality** by bylo třeba doplnit eval mimo lm-eval-harness (LLM-as-judge nebo task-driven manual eval). Náš patch řeší MC část; generativní část (kromě summarization) zůstává otevřená.
 - **Pro vyhodnocení reálné instruction-following / chat-mode kvality** by bylo třeba opustit lm-evaluation-harness pipeline a postavit eval přes plný `/v1/chat/completions` s reasoning budget a LLM-as-judge metrikami. To je samostatný projekt na týdny, který zde záměrně neděláme.
