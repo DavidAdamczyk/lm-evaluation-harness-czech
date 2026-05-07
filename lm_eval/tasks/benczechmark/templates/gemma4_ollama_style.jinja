@@ -1,0 +1,26 @@
+{#-
+   Ollama-style Gemma 4 chat template (no forced thinking).
+
+   Reproduces the format emitted by Ollama's `gemma4.go` renderer
+   (https://github.com/ollama/ollama/blob/main/model/renderers/gemma4.go),
+   which intentionally OMITS the `<|channel>thought\n<channel|>` postfix
+   that the upstream HuggingFace Gemma 4 chat template forces by default.
+
+   With this template, the model receives a clean `<|turn>model\n` prompt
+   and answers directly, matching the behaviour observed in real Ollama
+   deployments (e.g. RAG pipelines using ollama+OpenAI-compatible endpoint).
+-#}
+{{- bos_token -}}
+{%- if messages[0]['role'] == 'system' -%}
+  {{- '<|turn>system\n' + messages[0]['content'] + '<turn|>\n' -}}
+  {%- set loop_messages = messages[1:] -%}
+{%- else -%}
+  {%- set loop_messages = messages -%}
+{%- endif -%}
+{%- for message in loop_messages -%}
+  {%- set role = 'model' if message['role'] == 'assistant' else message['role'] -%}
+  {{- '<|turn>' + role + '\n' + message['content'] + '<turn|>\n' -}}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+  {{- '<|turn>model\n' -}}
+{%- endif -%}

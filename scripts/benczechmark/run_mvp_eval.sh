@@ -89,11 +89,21 @@ echo "[$(date +%H:%M:%S)] running lm_eval..." | tee -a "$LOG_FILE"
 cd "$REPO_ROOT"
 source .venv/bin/activate
 
+MODEL_ARGS="model=${MODEL},base_url=http://localhost:${PORT}/v1/completions,num_concurrent=8,tokenized_requests=False,max_length=${MAX_LEN}"
+if [ -n "${ENABLE_THINKING:-}" ]; then
+  # Forwarded to tokenizer.apply_chat_template via TemplateAPI patch.
+  MODEL_ARGS="${MODEL_ARGS},enable_thinking=${ENABLE_THINKING}"
+fi
+if [ -n "${CHAT_TEMPLATE_FILE:-}" ]; then
+  # Path to a Jinja file overriding tokenizer.chat_template (TemplateAPI patch).
+  MODEL_ARGS="${MODEL_ARGS},chat_template_file=${CHAT_TEMPLATE_FILE}"
+fi
+
 set +e
 lm_eval \
   --model local-completions \
   --tasks "$TASKS" \
-  --model_args "model=${MODEL},base_url=http://localhost:${PORT}/v1/completions,num_concurrent=8,tokenized_requests=False,max_length=${MAX_LEN}" \
+  --model_args "$MODEL_ARGS" \
   --batch_size 1 \
   --limit "$LIMIT" \
   --output_path "$OUTPUT_BASE" \

@@ -139,6 +139,17 @@ class TemplateAPI(TemplateLM):
         timeout: int = 300,
         header: Optional[Dict[str, str]] = None,
         max_images: int = 1,
+        # Forwarded as kwarg to tokenizer.apply_chat_template. Bypasses the harness
+        # CLI parser's JSON detection (which rejects nested dicts in --model_args).
+        # Qwen3-family: enable_thinking=False suppresses the `<think>` reasoning prefix.
+        # Gemma 4 IT: enable_thinking=True drops the forced `<channel>thought` marker
+        # (the parameter is inverted in Gemma's chat template).
+        enable_thinking: Optional[bool] = None,
+        # Path to a Jinja file overriding tokenizer.chat_template. Useful when the
+        # upstream HF chat template has different defaults than the actual
+        # deployment renderer (e.g. Gemma 4: HF tokenizer forces a thought channel
+        # while Ollama's `gemma4.go` does not — see templates/gemma4_ollama_style.jinja).
+        chat_template_file: Optional[str] = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -189,6 +200,26 @@ class TemplateAPI(TemplateLM):
         self._eos_string = eos_string
         self.timeout = int(timeout)
         self.max_images = int(max_images)
+        # Assemble kwargs for tokenizer.apply_chat_template — used to control
+        # reasoning behaviour on chat-templated loglikelihood/generation paths.
+        self.chat_template_kwargs: Dict[str, Any] = {}
+        if enable_thinking is not None:
+            # Accept str→bool conversions ("False"/"false"/"0"/"True"/"1" etc.)
+            if isinstance(enable_thinking, str):
+                v = enable_thinking.strip().lower()
+                if v in ("true", "1", "yes"):
+                    enable_thinking = True
+                elif v in ("false", "0", "no"):
+                    enable_thinking = False
+                else:
+                    raise ValueError(
+                        f"enable_thinking must be a bool-like value, got {enable_thinking!r}"
+                    )
+            self.chat_template_kwargs["enable_thinking"] = bool(enable_thinking)
+
+        # Optional override of tokenizer.chat_template from a Jinja file. Run
+        # after tokenizer init below — but capture the path now.
+        self._chat_template_file = chat_template_file
 
         eval_logger.info(f"Using tokenizer {self.tokenizer_backend}")
         if self.tokenizer_backend is None:
@@ -247,6 +278,17 @@ class TemplateAPI(TemplateLM):
                     revision=revision,
                     use_fast=use_fast_tokenizer,
                 )
+
+        # Apply chat-template override AFTER tokenizer is loaded.
+        if self._chat_template_file:
+            if self.tokenizer is None or not hasattr(self.tokenizer, "chat_template"):
+                raise ValueError(
+                    "chat_template_file requires a HuggingFace tokenizer with chat_template attribute"
+                )
+            with open(self._chat_template_file, encoding="utf-8") as fp:
+                custom = fp.read()
+            self.tokenizer.chat_template = custom
+            eval_logger.info(f"Overriding tokenizer.chat_template from {self._chat_template_file}")
 
     @abc.abstractmethod
     def _create_payload(
@@ -342,6 +384,7 @@ class TemplateAPI(TemplateLM):
                 tokenize=False,
                 add_generation_prompt=add_generation_prompt,
                 continue_final_message=not add_generation_prompt,
+                **self.chat_template_kwargs,
             )
         elif self.tokenizer_backend == "remote" and self.tokenized_requests:
             return chat_history
